@@ -3,126 +3,153 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { ToastContainer, toast } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import { toast } from 'react-toastify';
 import { supabase } from '../lib/supabase';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
 
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      // 1. Intentar Autenticación
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-    if (authError) {
-      setError('Credenciales incorrectas. Verifica tu correo y contraseña.');
-      setLoading(false);
-      return;
-    }
+      if (authError) {
+        toast.error('Credenciales incorrectas.');
+        setLoading(false);
+        return;
+      }
 
-    if (authData.user) {
+      // 2. Consultar Perfil
       const { data: perfil, error: perfilError } = await supabase
-        .from('perfiles_usuario')
+        .from('perfiles_usuario') 
         .select('rol')
-        .eq('id', authData.user.id)
+        .eq('id', authData.user?.id)
         .single();
 
-      if (perfilError) {
-        router.push('/registrar');
-      } else {
-        if (perfil.rol === 'admin') {
-          toast.success('Bienvenido al panel de control LOGIC', { autoClose: 1500 });
-          setTimeout(() => router.push('/admin'), 1500);
-        } else if (perfil.rol === 'proveedor') {
-          toast.success('Ingresando al centro de Servicios', { autoClose: 1500 });
-          setTimeout(() => router.push('/proveedor'), 1500);
-        } else {
-          toast.success('Ingresando al centro de registro de Servicios', { autoClose: 1500 });
-          setTimeout(() => router.push('/registrar'), 1500);
-        }
+      if (perfilError || !perfil) {
+        console.error("Error buscando perfil:", perfilError);
+        toast.error('Usuario autenticado, pero no se encontró su perfil en la tabla perfiles_usuario.');
+        setLoading(false);
+        return;
       }
+
+      const userRol = perfil.rol?.toLowerCase().trim();
+
+      // 3. Redirección con Mensaje de Éxito
+      if (userRol === 'admin') {
+        toast.success('Bienvenido, Administrador');
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        router.push('/admin');
+      } 
+      else if (userRol === 'proveedor') {
+        toast.success('Centro de Servicios LOGIC');
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        router.push('/proveedor');
+      } 
+      else {
+        // Para roles 'unidad' o 'user'
+        toast.success('Bienvenido al centro de registro');
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        router.push('/registrar');
+      }
+
+    } catch (err) {
+      toast.error('Error inesperado de conexión.');
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <ToastContainer aria-label={undefined} />
+    <div className="min-h-screen bg-[#F4F4F7] flex flex-col items-center justify-center px-6 font-[-apple-system,BlinkMacSystemFont,sans-serif]">
       
-      <div className="max-w-md w-full bg-white rounded-xl shadow-sm p-8 border border-gray-100 overflow-hidden">
-        <div className="text-center mb-8 flex flex-col items-center">
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Bienvenido</h1>
-          
-          {/* 2. AQUÍ ESTÁ EL LOGO MEJORADO */}
-          {/* src="/logo.png" busca automáticamente en la carpeta 'public' */}
-          {/* He aplicado clases para forma circular, borde, sombra y centrado */}
-          <div className="my-6 w-[130px] h-[130px] rounded-full overflow-hidden border-4 border-gray-100 shadow-lg flex items-center justify-center bg-white p-2">
-            <Image 
-              src="/logo.png" 
-              alt="Logo Grupo LOGIC" 
-              width={110}  // Ligeramente más pequeño para que respire dentro del círculo
-              height={110}
-              priority     // Carga esta imagen rápido
-              className="object-contain rounded-full" // Asegura que la imagen se adapte al contenedor circular
+      {/* --- LOGO Y TÍTULOS --- */}
+      <div className="mb-10 text-center flex flex-col items-center animate-in fade-in duration-500">
+        <div className="w-[120px] h-[120px] bg-white rounded-[32px] shadow-[0_10px_30px_rgba(0,0,0,0.08)] flex items-center justify-center mb-6">
+          <Image 
+            src="/logo.png" 
+            alt="Logo LOGIC" 
+            width={90} 
+            height={90} 
+            priority 
+            className="object-contain" 
+          />
+        </div>
+        <h1 className="text-[34px] font-black text-black tracking-tight leading-none mb-1.5">
+          URBANIA
+        </h1>
+        <p className="text-[12px] font-bold text-[#8E8E93] uppercase tracking-[0.25em]">
+          Grupo LOGIC
+        </p>
+      </div>
+
+      {/* --- FORMULARIO --- */}
+      <form onSubmit={handleLogin} className="w-full max-w-sm flex flex-col gap-6">
+        
+        {/* Contenedor de Inputs Inset Grouped */}
+        <div className="bg-white rounded-[24px] shadow-[0_2px_15px_rgba(0,0,0,0.03)] overflow-hidden w-full">
+          <div className="flex items-center px-5 py-4 border-b border-[#F2F2F7]">
+            <label className="w-[85px] text-[12px] text-[#8E8E93] font-bold uppercase tracking-wider">
+              Correo
+            </label>
+            <input 
+              type="email" 
+              className="flex-1 bg-transparent text-[16px] text-[#333333] font-medium outline-none placeholder:text-[#C7C7CC]"
+              placeholder="ejemplo@logic.com"
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)} 
+              required
             />
           </div>
-          
-          <p className="text-base text-gray-600 mt-2">Ingresa a tu cuenta para continuar</p>
+          <div className="flex items-center px-5 py-4">
+            <label className="w-[85px] text-[12px] text-[#8E8E93] font-bold uppercase tracking-wider">
+              Clave
+            </label>
+            <input 
+              type="password" 
+              className="flex-1 bg-transparent text-[16px] text-[#333333] font-medium outline-none placeholder:text-[#C7C7CC] tracking-widest"
+              placeholder="••••••••"
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              required
+            />
+          </div>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Correo Electrónico
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black outline-none text-gray-900 transition-colors"
-              placeholder="Usuario@logic.com"
-            />
-          </div>
+        {/* Botón de Acción */}
+        <button 
+          type="submit" 
+          disabled={loading}
+          className="w-full bg-[#007AFF] text-white py-[18px] rounded-[20px] font-bold text-[16px] uppercase tracking-wider shadow-[0_8px_20px_rgba(0,122,255,0.25)] active:scale-[0.98] active:bg-[#0062CC] transition-all disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center"
+        >
+          {loading ? <div className="ios-spinner"></div> : 'INGRESAR'}
+        </button>
+        
+      </form>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Contraseña
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black outline-none text-gray-900 transition-colors"
-              placeholder="••••••••"
-            />
-          </div>
-
-          {error && (
-            <div className="text-red-500 text-sm text-center bg-red-50 p-2 rounded-lg">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-black text-white font-semibold py-3 rounded-lg hover:bg-gray-800 transition-colors disabled:bg-gray-400 mt-4 text-base"
-          >
-            {loading ? 'Iniciando...' : 'Iniciar Sesión'}
-          </button>
-        </form>
-      </div>
+      {/* --- ESTILOS SPINNER --- */}
+      <style jsx>{`
+        .ios-spinner { 
+          width: 22px; 
+          height: 22px; 
+          border: 3px solid rgba(255,255,255,0.3); 
+          border-top-color: #fff; 
+          border-radius: 50%; 
+          animation: spin 0.8s linear infinite; 
+        }
+        @keyframes spin { 
+          to { transform: rotate(360deg); } 
+        }
+      `}</style>
     </div>
   );
 }
