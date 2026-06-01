@@ -15,9 +15,18 @@ export default function OperadorDashboard() {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [enviando, setEnviando] = useState(false);
 
+  // Función auxiliar para obtener la hora actual en formato HH:MM
+  const obtenerHoraActual = () => {
+    const ahora = new Date();
+    const horas = String(ahora.getHours()).padStart(2, '0');
+    const minutos = String(ahora.getMinutes()).padStart(2, '0');
+    return `${horas}:${minutos}`;
+  };
+
   const [form, setForm] = useState({
     fecha: new Date().toISOString().split('T')[0],
-    hora_salida: '', cliente: '', servicio_a: '', inicio: '', destino: '',
+    hora_salida: obtenerHoraActual(), // <-- Inicializado automáticamente con la hora actual
+    cliente: '', servicio_a: '', inicio: '', destino: '',
     proveedor_id: '', centro_costo: '', metodo_pago: 'Efectivo', valor: ''
   });
 
@@ -45,7 +54,17 @@ export default function OperadorDashboard() {
   };
 
   useEffect(() => {
-    fetchDatos();
+    const checkAcceso = async () => {
+      await fetchDatos();
+      const notaBienvenida = sessionStorage.getItem('mostrar_bienvenida');
+      if (notaBienvenida === 'true') {
+        setTimeout(() => {
+          toast.success('Bienvenido al centro de registro');
+          sessionStorage.removeItem('mostrar_bienvenida');
+        }, 600);
+      }
+    };
+    checkAcceso();
   }, []);
 
   const handleRegistrar = async (e: React.FormEvent) => {
@@ -53,23 +72,43 @@ export default function OperadorDashboard() {
     setEnviando(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      
+      // FORMATEO SEGURO: Si la hora viene en formato HH:MM, le agregamos los segundos (:00) para Postgres
+      const horaFormateada = form.hora_salida.split(':').length === 2 
+        ? `${form.hora_salida}:00` 
+        : form.hora_salida;
+
       const { error } = await supabase.from('carreras').insert([{
-        perfil_id: session?.user.id, unidad_id: perfil?.unidad_id,
-        ...form, valor: parseFloat(form.valor)
+        perfil_id: session?.user.id, 
+        unidad_id: perfil?.unidad_id,
+        ...form,
+        hora_salida: horaFormateada, // <-- Inyectamos la hora con formato inquebrantable
+        valor: parseFloat(form.valor)
       }]);
+
       if (error) throw error;
       toast.success('Servicio Guardado');
       setModalAbierto(false);
-      setForm({ ...form, hora_salida: '', cliente: '', servicio_a: '', inicio: '', destino: '', centro_costo: '', valor: '' });
+      
+      // Al limpiar el formulario, volvemos a calcular la hora actual exacta
+      setForm({ 
+        ...form, 
+        hora_salida: obtenerHoraActual(), 
+        cliente: '', servicio_a: '', inicio: '', destino: '', centro_costo: '', valor: '' 
+      });
       fetchDatos();
-    } catch (err: any) { toast.error('Error al guardar'); } finally { setEnviando(false); }
+    } catch (err: any) { 
+      toast.error('Error al guardar el registro'); 
+    } finally { 
+      setEnviando(false); 
+    }
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-[#F4F4F7]"><div className="ios-spinner"></div></div>;
 
   return (
     <div className="min-h-screen bg-[#F4F4F7] pb-10 font-[-apple-system,BlinkMacSystemFont,sans-serif]">
-      <ToastContainer position="top-center" />
+      <ToastContainer position="top-center" toastStyle={{ borderRadius: '20px', fontWeight: 'bold' }} />
 
       <nav className="sticky top-0 z-30 bg-[#F4F4F7]/90 backdrop-blur-xl px-5 pt-12 pb-4">
         <div className="flex justify-between items-center">
@@ -95,7 +134,7 @@ export default function OperadorDashboard() {
           <span className="bg-[#E5F9E0] text-[#34C759] text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-wider">Activa</span>
         </div>
 
-        <button onClick={() => setModalAbierto(true)} className="w-full bg-[#007AFF] text-white py-[18px] rounded-[20px] font-bold text-[15px] shadow-[0_8px_20px_rgba(0,122,255,0.25)] active:scale-[0.98] transition-all uppercase tracking-widest">
+        <button onClick={() => setModalAbierto(true)} className="w-full bg-[#007AFF] text-white py-[18px] rounded-[20px] font-bold text-[15px] shadow-[0_8px_20px_rgba(0,122,255,0.25)] active:scale-[0.98] transition-all flex items-center justify-center uppercase tracking-widest">
            Nueva Carrera
         </button>
 
@@ -112,7 +151,8 @@ export default function OperadorDashboard() {
                   <p className={`text-[13px] font-medium leading-tight ${c.pagado ? 'text-[#FF3B30]/70' : 'text-[#8E8E93]'}`}>{c.inicio} <span className="opacity-40 mx-1">→</span> {c.destino}</p>
                   
                   <p className={`text-[11px] font-bold mt-1.5 flex items-center gap-1 ${c.pagado ? 'text-[#FF3B30]/60' : 'text-[#C7C7CC]'}`}>
-                    Reg: {c.fecha.split('-').reverse().join('/')} a las {c.hora_salida}
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    Reg: {c.fecha.split('-').reverse().join('/')} a las {c.hora_salida.substring(0, 5)}
                   </p>
                 </div>
                 <div className="flex flex-col items-end">
@@ -127,12 +167,81 @@ export default function OperadorDashboard() {
         </div>
       </main>
 
-      {/* --- EL MODAL QUEDA IGUAL, SE OMITIÓ POR ESPACIO PERO NO DEBES BORRARLO EN TU CÓDIGO --- */}
       {modalAbierto && (
         <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
-          {/* Mismo código de tu modal... */}
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-md transition-opacity" onClick={() => setModalAbierto(false)}></div>
+          
+          <div className="relative w-full max-w-lg bg-[#F4F4F7] rounded-t-[32px] sm:rounded-[32px] shadow-2xl flex flex-col max-h-[96vh] animate-slide-up overflow-hidden">
+            <div className="sm:hidden w-12 h-1.5 bg-[#C7C7CC] rounded-full mx-auto mt-4 mb-2 opacity-60"></div>
+            
+            <div className="px-6 py-4 flex justify-between items-center">
+              <h2 className="text-[24px] font-black text-black tracking-tighter uppercase">Registro</h2>
+              <button type="button" onClick={() => setModalAbierto(false)} className="bg-[#007AFF] text-white py-1.5 px-4 rounded-full font-black text-[11px] shadow-md uppercase tracking-wider active:scale-95 transition-transform">Cerrar</button>
+            </div>
+            
+            <form onSubmit={handleRegistrar} className="overflow-y-auto px-5 pb-12 pt-2 space-y-5">
+              <div className="bg-white rounded-[24px] overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
+                <IOSRow label="Fecha" value={form.fecha} type="date" onChange={(e: any) => setForm({...form, fecha: e.target.value})} />
+                <IOSRow label="Salida" value={form.hora_salida} type="time" onChange={(e: any) => setForm({...form, hora_salida: e.target.value})} />
+                <IOSRow label="Cliente" placeholder="Empresa o particular" value={form.cliente} onChange={(e: any) => setForm({...form, cliente: e.target.value})} />
+                <IOSRow label="Servicio" placeholder="Nombre pasajero" border={false} value={form.servicio_a} onChange={(e: any) => setForm({...form, servicio_a: e.target.value})} />
+              </div>
+
+              <div className="bg-white rounded-[24px] overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
+                <IOSRow label="Inicio" placeholder="Origen" value={form.inicio} onChange={(e: any) => setForm({...form, inicio: e.target.value})} />
+                <IOSRow label="Destino" placeholder="Llegada" border={false} value={form.destino} onChange={(e: any) => setForm({...form, destino: e.target.value})} />
+              </div>
+
+              <div className="bg-white rounded-[24px] overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
+                <div className="flex items-center px-5 py-4 border-b border-[#F2F2F7] min-h-[56px]">
+                  <label className="w-24 text-[12px] text-[#8E8E93] font-bold uppercase tracking-wider">Proveedor</label>
+                  <select required value={form.proveedor_id} onChange={e => setForm({...form, proveedor_id: e.target.value})} className="flex-1 bg-transparent text-right outline-none appearance-none font-bold text-[#333333] cursor-pointer">
+                    <option value="">Seleccionar...</option>
+                    {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre_proveedor}</option>)}
+                  </select>
+                </div>
+                <IOSRow label="C. Costo" placeholder="Opcional" border={false} value={form.centro_costo} onChange={(e: any) => setForm({...form, centro_costo: e.target.value})} />
+              </div>
+              
+              <div className="bg-[#E3E3E8] p-1 rounded-[14px] flex gap-1 shadow-inner">
+                {['Efectivo', 'Credito', 'Transferencia'].map((m) => (
+                  <button key={m} type="button" onClick={() => setForm({...form, metodo_pago: m})} className={`flex-1 py-3 rounded-[10px] text-[11px] font-black transition-all duration-200 uppercase tracking-wide ${form.metodo_pago === m ? 'bg-white text-black shadow-[0_2px_8px_rgba(0,0,0,0.1)]' : 'text-[#8E8E93]'}`}>
+                    {m === 'Credito' ? 'CRÉDITO' : m}
+                  </button>
+                ))}
+              </div>
+
+              <div className="bg-white rounded-[28px] p-6 sm:p-8 flex justify-between items-center shadow-[0_2px_15px_rgba(0,0,0,0.03)] mt-2">
+                <span className="text-[15px] font-black text-black uppercase tracking-wider">Valor Total</span>
+                <div className="flex items-center text-[40px] sm:text-[48px] font-black text-black tracking-tighter">
+                  <span className="text-[28px] text-[#007AFF] mr-2 mt-1">$</span>
+                  <input type="number" step="0.01" required placeholder="0.00" value={form.valor} onChange={e => setForm({...form, valor: e.target.value})} className="w-32 text-right outline-none bg-transparent placeholder:text-[#C7C7CC]" />
+                </div>
+              </div>
+
+              <button type="submit" disabled={enviando} className="w-full bg-[#007AFF] text-white py-[20px] rounded-[22px] font-black text-[16px] shadow-[0_8px_20px_rgba(0,122,255,0.25)] active:scale-[0.98] disabled:bg-[#C7C7CC] disabled:shadow-none transition-all uppercase tracking-[0.15em] mt-4">
+                {enviando ? 'Guardando...' : 'Finalizar Registro'}
+              </button>
+            </form>
+          </div>
         </div>
       )}
+
+      <style jsx>{`
+        @keyframes slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .ios-spinner { width: 32px; height: 32px; border: 4px solid rgba(0, 122, 255, 0.1); border-top-color: #007AFF; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
+    </div>
+  );
+}
+
+function IOSRow({ label, border = true, ...props }: any) {
+  return (
+    <div className={`flex items-center px-5 py-4 min-h-[56px] ${border ? 'border-b border-[#F2F2F7]' : ''}`}>
+      <label className="w-24 text-[12px] text-[#8E8E93] font-bold uppercase tracking-wider">{label}</label>
+      <input className="flex-1 bg-transparent text-right outline-none font-bold text-[#333333] placeholder:text-[#C7C7CC]" required={label !== 'C. Costo'} {...props} />
     </div>
   );
 }
