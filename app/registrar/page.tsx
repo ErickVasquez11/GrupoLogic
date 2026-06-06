@@ -15,7 +15,7 @@ export default function OperadorDashboard() {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [enviando, setEnviando] = useState(false);
 
-  // Función auxiliar para obtener la hora actual en formato HH:MM
+  // Función para obtener la hora actual segura
   const obtenerHoraActual = () => {
     const ahora = new Date();
     const horas = String(ahora.getHours()).padStart(2, '0');
@@ -25,7 +25,7 @@ export default function OperadorDashboard() {
 
   const [form, setForm] = useState({
     fecha: new Date().toISOString().split('T')[0],
-    hora_salida: obtenerHoraActual(), // <-- Inicializado automáticamente con la hora actual
+    hora_salida: obtenerHoraActual(), 
     cliente: '', servicio_a: '', inicio: '', destino: '',
     proveedor_id: '', centro_costo: '', metodo_pago: 'Efectivo', valor: ''
   });
@@ -54,17 +54,7 @@ export default function OperadorDashboard() {
   };
 
   useEffect(() => {
-    const checkAcceso = async () => {
-      await fetchDatos();
-      const notaBienvenida = sessionStorage.getItem('mostrar_bienvenida');
-      if (notaBienvenida === 'true') {
-        setTimeout(() => {
-          toast.success('Bienvenido al centro de registro');
-          sessionStorage.removeItem('mostrar_bienvenida');
-        }, 600);
-      }
-    };
-    checkAcceso();
+    fetchDatos();
   }, []);
 
   const handleRegistrar = async (e: React.FormEvent) => {
@@ -73,24 +63,28 @@ export default function OperadorDashboard() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // FORMATEO SEGURO: Si la hora viene en formato HH:MM, le agregamos los segundos (:00) para Postgres
-      const horaFormateada = form.hora_salida.split(':').length === 2 
-        ? `${form.hora_salida}:00` 
-        : form.hora_salida;
+      // 1. ESCUDO ANTI-ERRORES DE HORA (IOS)
+      // Si por algún motivo la hora viene vacía, tomamos la actual.
+      let horaFinal = form.hora_salida || obtenerHoraActual();
+      const partesHora = horaFinal.split(':');
+      
+      // Forzamos la hora al formato estricto HH:MM:SS para PostgreSQL
+      const horaPostgres = `${partesHora[0].padStart(2, '0')}:${partesHora[1] ? partesHora[1].padStart(2, '0') : '00'}:00`;
 
       const { error } = await supabase.from('carreras').insert([{
         perfil_id: session?.user.id, 
         unidad_id: perfil?.unidad_id,
         ...form,
-        hora_salida: horaFormateada, // <-- Inyectamos la hora con formato inquebrantable
+        hora_salida: horaPostgres, // <-- Enviamos la hora blindada
         valor: parseFloat(form.valor)
       }]);
 
       if (error) throw error;
-      toast.success('Servicio Guardado');
+      
+      // 2. MENSAJE DE ÉXITO ESTILO IOS
+      toast.success('Registro de Carrera Exitoso!');
       setModalAbierto(false);
       
-      // Al limpiar el formulario, volvemos a calcular la hora actual exacta
       setForm({ 
         ...form, 
         hora_salida: obtenerHoraActual(), 
@@ -98,7 +92,7 @@ export default function OperadorDashboard() {
       });
       fetchDatos();
     } catch (err: any) { 
-      toast.error('Error al guardar el registro'); 
+      toast.error('Error al guardar: Verifique los datos.'); 
     } finally { 
       setEnviando(false); 
     }
@@ -108,7 +102,22 @@ export default function OperadorDashboard() {
 
   return (
     <div className="min-h-screen bg-[#F4F4F7] pb-10 font-[-apple-system,BlinkMacSystemFont,sans-serif]">
-      <ToastContainer position="top-center" toastStyle={{ borderRadius: '20px', fontWeight: 'bold' }} />
+      {/* Estilos del Toast para que parezca notificación nativa de iOS */}
+      <ToastContainer 
+        position="top-center" 
+        autoClose={3000} 
+        hideProgressBar={true}
+        toastStyle={{ 
+          borderRadius: '16px', 
+          fontWeight: 'bold',
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+          color: '#1C1C1E',
+          fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif'
+        }} 
+      />
 
       <nav className="sticky top-0 z-30 bg-[#F4F4F7]/90 backdrop-blur-xl px-5 pt-12 pb-4">
         <div className="flex justify-between items-center">
