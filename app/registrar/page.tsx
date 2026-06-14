@@ -15,7 +15,6 @@ export default function OperadorDashboard() {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [enviando, setEnviando] = useState(false);
 
-  // Función para obtener la hora actual segura
   const obtenerHoraActual = () => {
     const ahora = new Date();
     const horas = String(ahora.getHours()).padStart(2, '0');
@@ -44,10 +43,17 @@ export default function OperadorDashboard() {
     const { data: provs } = await supabase.from('proveedores').select('*').order('nombre_proveedor');
     setProveedores(provs || []);
 
+    // CÁLCULO DE HACE 15 DÍAS
+    const fechaHace15Dias = new Date();
+    fechaHace15Dias.setDate(fechaHace15Dias.getDate() - 15);
+    const limiteFecha = fechaHace15Dias.toISOString().split('T')[0];
+
     const { data: listado } = await supabase
       .from('carreras').select('*, proveedores(nombre_proveedor)')
       .eq('perfil_id', session.user.id)
-      .order('fecha', { ascending: false }).order('hora_salida', { ascending: false }).limit(10);
+      .gte('fecha', limiteFecha) // <-- Trae todo desde hace 15 días (sin límite de cantidad)
+      .order('fecha', { ascending: false })
+      .order('hora_salida', { ascending: false });
     
     setCarreras(listado || []);
     setLoading(false);
@@ -63,25 +69,20 @@ export default function OperadorDashboard() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // 1. ESCUDO ANTI-ERRORES DE HORA (IOS)
-      // Si por algún motivo la hora viene vacía, tomamos la actual.
       let horaFinal = form.hora_salida || obtenerHoraActual();
       const partesHora = horaFinal.split(':');
-      
-      // Forzamos la hora al formato estricto HH:MM:SS para PostgreSQL
       const horaPostgres = `${partesHora[0].padStart(2, '0')}:${partesHora[1] ? partesHora[1].padStart(2, '0') : '00'}:00`;
 
       const { error } = await supabase.from('carreras').insert([{
         perfil_id: session?.user.id, 
         unidad_id: perfil?.unidad_id,
         ...form,
-        hora_salida: horaPostgres, // <-- Enviamos la hora blindada
+        hora_salida: horaPostgres,
         valor: parseFloat(form.valor)
       }]);
 
       if (error) throw error;
       
-      // 2. MENSAJE DE ÉXITO ESTILO IOS
       toast.success('Registro de Carrera Exitoso!');
       setModalAbierto(false);
       
@@ -102,20 +103,12 @@ export default function OperadorDashboard() {
 
   return (
     <div className="min-h-screen bg-[#F4F4F7] pb-10 font-[-apple-system,BlinkMacSystemFont,sans-serif]">
-      {/* Estilos del Toast para que parezca notificación nativa de iOS */}
       <ToastContainer 
-        position="top-center" 
-        autoClose={3000} 
-        hideProgressBar={true}
+        position="top-center" autoClose={3000} hideProgressBar={true}
         toastStyle={{ 
-          borderRadius: '16px', 
-          fontWeight: 'bold',
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-          color: '#1C1C1E',
-          fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif'
+          borderRadius: '16px', fontWeight: 'bold', backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+          color: '#1C1C1E', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif'
         }} 
       />
 
@@ -148,7 +141,8 @@ export default function OperadorDashboard() {
         </button>
 
         <div className="pt-4">
-          <h3 className="text-[#8E8E93] text-[11px] font-bold uppercase tracking-widest ml-2 mb-3">Historial de hoy</h3>
+          {/* TÍTULO ACTUALIZADO */}
+          <h3 className="text-[#8E8E93] text-[11px] font-bold uppercase tracking-widest ml-2 mb-3">Historial (Últimos 15 días)</h3>
           <div className="bg-white rounded-[24px] shadow-[0_2px_12px_rgba(0,0,0,0.03)] overflow-hidden">
             {carreras.length > 0 ? carreras.map((c, i) => (
               <div key={c.id} className={`p-5 flex justify-between items-center transition-colors ${c.pagado ? 'bg-[#FF3B30]/5 border-l-4 border-l-[#FF3B30]' : 'active:bg-[#F2F2F7]'} ${i !== carreras.length - 1 && !c.pagado ? 'border-b border-[#F2F2F7]' : ''}`}>
@@ -170,7 +164,7 @@ export default function OperadorDashboard() {
                 </div>
               </div>
             )) : (
-              <div className="p-8 text-center text-[#8E8E93] font-medium text-sm">No hay carreras registradas hoy</div>
+              <div className="p-8 text-center text-[#8E8E93] font-medium text-sm">No hay carreras recientes</div>
             )}
           </div>
         </div>

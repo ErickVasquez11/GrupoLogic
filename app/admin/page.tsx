@@ -23,7 +23,6 @@ export default function AdminDashboard() {
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
 
-  // NUEVO ESTADO: Controla si el cálculo financiero incluye o ignora los viajes pagados
   const [incluirPagadosEnCalculo, setIncluirPagadosEnCalculo] = useState(false);
 
   const [carreraEditando, setCarreraEditando] = useState<any>(null);
@@ -92,7 +91,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // ----- FUNCIONES CRUD -----
   const handleRegistroAdmin = async (e: any) => {
     e.preventDefault();
     if (!formRegistroAdmin.perfil_id) return toast.warning('Selecciona un operador');
@@ -236,7 +234,6 @@ export default function AdminDashboard() {
 
   if (verificandoSeguridad) return <div className="min-h-screen flex items-center justify-center bg-[#F2F2F7]"><div className="ios-spinner"></div></div>;
 
-  // --- CÁLCULOS FINANCIEROS ---
   const carrerasFiltradas = carreras.filter(c => {
     const coincideUsuario = filtroUsuario ? c.perfiles_usuario?.nombre_completo === filtroUsuario : true;
     const coincideProveedor = filtroProveedor ? c.proveedores?.nombre_proveedor === filtroProveedor : true;
@@ -261,7 +258,6 @@ export default function AdminDashboard() {
   });
 
   carrerasFiltradas.forEach(c => {
-    // Si NO queremos incluir pagados en el cálculo, y la carrera está pagada, la saltamos.
     if (!incluirPagadosEnCalculo && c.pagado) return;
 
     const valor = parseFloat(c.valor || 0);
@@ -290,7 +286,7 @@ export default function AdminDashboard() {
   const datosLiquidacionUsuarios = Object.values(resumenUsuarios).map(u => ({ ...u, neto: u.creditos_a_favor - u.comision_descontar - u.valor_cuota }));
   const datosLiquidacionProveedores = Object.values(resumenProveedores).map(p => ({ ...p, total_a_cancelar: p.total_creditos + p.comision_a_sumar + p.cuota_frecuencia }));
 
-  // --- PDF ---
+  // --- LÓGICA DE PDF Y MARCAR COMO PAGADO POR LOTES ---
   const generarPDF = async () => {
     if (carrerasFiltradas.length === 0) return alert("No hay datos para exportar.");
     const todasPagadas = carrerasFiltradas.every(c => c.pagado);
@@ -337,10 +333,25 @@ export default function AdminDashboard() {
     autoTable(doc, { startY: startY, head: [['Fecha/Hora', 'Cliente', 'Ruta', 'Operador', 'Logística', 'Finanzas']], body: tableData, theme: 'grid', styles: { fontSize: 8, cellPadding: 3 }, headStyles: { fillColor: [0, 0, 0] } });
     doc.save('Reporte_LOGIC.pdf');
 
+    // SOLUCIÓN AL BUG DE DATOS NO ACTUALIZADOS (CHUNK UPDATE)
     if (!todasPagadas && window.confirm("📄 PDF Generado.\n\n¿Deseas marcar las carreras como PAGADAS para que se sombreen de rojo?")) {
       const carrerasParaPagar = carrerasFiltradas.filter(c => !c.pagado).map(c => c.id);
-      const { error } = await supabase.from('carreras').update({ pagado: true }).in('id', carrerasParaPagar);
-      if (!error) { toast.success('Carreras marcadas como PAGADAS.'); fetchDatos(); }
+      
+      toast.info('Actualizando base de datos...');
+      
+      try {
+        // Ejecutamos la actualización en "Lotes" (Chunks) de 100 en 100 para no saturar a Supabase
+        for (let i = 0; i < carrerasParaPagar.length; i += 100) {
+          const lote = carrerasParaPagar.slice(i, i + 100);
+          const { error } = await supabase.from('carreras').update({ pagado: true }).in('id', lote);
+          if (error) throw error;
+        }
+        
+        toast.success('✅ Todas las carreras marcadas como PAGADAS.');
+        fetchDatos(); // Refrescamos para pintar el color rojo en todos lados
+      } catch (err: any) {
+        toast.error('Error al actualizar los pagos: ' + err.message);
+      }
     }
   };
 
@@ -406,8 +417,6 @@ export default function AdminDashboard() {
             <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-white">
               <div className="bg-[#F2F2F7]/50 px-6 py-4 border-b border-[#C6C6C8]/30 flex justify-between items-center">
                 <h3 className="font-black text-black uppercase tracking-widest text-[13px]">Liquidación Operadores</h3>
-                
-                {/* --- BOTÓN INTERACTIVO PARA TOGGLE --- */}
                 <button 
                   onClick={() => setIncluirPagadosEnCalculo(!incluirPagadosEnCalculo)} 
                   className={`text-[9px] uppercase tracking-widest px-2 py-1 rounded-md shadow-sm border transition-colors active:scale-95 ${incluirPagadosEnCalculo ? 'bg-[#007AFF] text-white border-[#007AFF]' : 'bg-white text-[#8E8E93] border-[#C6C6C8]/20'}`}
@@ -448,8 +457,6 @@ export default function AdminDashboard() {
             <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-white">
               <div className="bg-[#F2F2F7]/50 px-6 py-4 border-b border-[#C6C6C8]/30 flex justify-between items-center">
                 <h3 className="font-black text-black uppercase tracking-widest text-[13px]">Liquidación Proveedores</h3>
-                
-                {/* --- BOTÓN INTERACTIVO PARA TOGGLE --- */}
                 <button 
                   onClick={() => setIncluirPagadosEnCalculo(!incluirPagadosEnCalculo)} 
                   className={`text-[9px] uppercase tracking-widest px-2 py-1 rounded-md shadow-sm border transition-colors active:scale-95 ${incluirPagadosEnCalculo ? 'bg-[#007AFF] text-white border-[#007AFF]' : 'bg-white text-[#8E8E93] border-[#C6C6C8]/20'}`}
@@ -505,7 +512,7 @@ export default function AdminDashboard() {
                   return (
                     <tr key={c.id} onClick={() => setCarreraEditando(c)} className={`cursor-pointer transition-colors group ${c.pagado ? 'bg-[#FF3B30]/5 hover:bg-[#FF3B30]/10 border-l-4 border-l-[#FF3B30]' : 'hover:bg-[#F2F2F7]/50 border-l-4 border-l-transparent'}`}>
                       <td className="px-6 py-5">
-                        <div className={`font-bold text-[15px] ${c.pagado ? 'text-[#FF3B30]' : 'text-black'}`}>{c.fecha.split('-').reverse().join('/')} <span className={`${c.pagado ? 'text-[#FF3B30]/70' : 'text-[#8E8E93]'} text-xs ml-1`}>{c.hora_salida}</span></div>
+                        <div className={`font-bold text-[15px] ${c.pagado ? 'text-[#FF3B30]' : 'text-black'}`}>{c.fecha.split('-').reverse().join('/')} <span className={`${c.pagado ? 'text-[#FF3B30]/70' : 'text-[#8E8E93]'} text-xs ml-1`}>{c.hora_salida.substring(0, 5)}</span></div>
                         <div className={`text-[13px] font-medium mt-1 ${c.pagado ? 'text-[#FF3B30]/80' : 'text-[#8E8E93]'}`}>{c.inicio} → {c.destino}</div>
                       </td>
                       <td className="px-6 py-5">
