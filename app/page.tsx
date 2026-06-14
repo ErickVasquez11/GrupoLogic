@@ -76,7 +76,7 @@ export default function LoginPage() {
       <div className="mb-10 text-center flex flex-col items-center animate-in fade-in duration-500">
         <div className="w-[120px] h-[120px] bg-white rounded-[32px] shadow-[0_10px_30px_rgba(0,0,0,0.08)] flex items-center justify-center mb-6">
           <Image 
-            src="/logo.png" 
+            src="/logourbania.png" 
             alt="Logo LOGIC" 
             width={90} 
             height={90} 
@@ -88,7 +88,7 @@ export default function LoginPage() {
           URBANIA
         </h1>
         <p className="text-[12px] font-bold text-[#8E8E93] uppercase tracking-[0.25em]">
-          Grupo LOGIC
+          Transportes
         </p>
       </div>
 
